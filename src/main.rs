@@ -11,5 +11,10 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| "invalid sync point addr")?;
 
-    sync_point::serve(addr).await
+    let sync_timeout = std::env::var("SYNC_POINT_TIMEOUT_SEC")
+        .ok()
+        .and_then(|duration| duration.parse::<u64>().ok())
+        .unwrap_or(10);
+
+    sync_point::serve(addr, sync_timeout).await
 }

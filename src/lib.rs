@@ -7,24 +7,25 @@
 
 mod api;
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::Router;
-use once_cell::sync::Lazy;
 use tokio::sync::{Mutex, Notify};
 
 type UniqueId = u64;
-type SyncState = Arc<Mutex<HashMap<UniqueId, Arc<Notify>>>>;
+type SyncMap = Arc<Mutex<HashMap<UniqueId, Arc<Notify>>>>;
 
-static SYNC_TIMEOUT: Lazy<u64> = Lazy::new(|| {
-    std::env::var("SYNC_POINT_TIMEOUT_SEC")
-        .ok()
-        .and_then(|duration| duration.parse::<u64>().ok())
-        .unwrap_or(10)
-});
+#[derive(Clone)]
+struct SyncState {
+    map: SyncMap,
+    timeout: Duration,
+}
 
-pub async fn serve(addr: SocketAddr) -> anyhow::Result<()> {
-    let state = SyncState::default();
+pub async fn serve(addr: SocketAddr, timeout_duration: u64) -> anyhow::Result<()> {
+    let state = SyncState {
+        map: SyncMap::default(),
+        timeout: Duration::from_secs(timeout_duration),
+    };
 
     let app = router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;

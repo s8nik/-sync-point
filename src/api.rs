@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use axum::{
     extract::{Path, State},
@@ -6,7 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{SyncState, UniqueId, SYNC_TIMEOUT};
+use super::{SyncState, UniqueId};
 
 pub(super) async fn sync_two_parties(
     Path(unique_id): Path<UniqueId>,
@@ -15,7 +15,7 @@ pub(super) async fn sync_two_parties(
     tracing::debug!("request for synchronization by id: {unique_id}");
 
     let notify = {
-        let mut map = state.lock().await;
+        let mut map = state.map.lock().await;
 
         if let Some(notify) = map.remove(&unique_id) {
             tracing::info!("< successful synchronization by id: {unique_id}");
@@ -26,13 +26,11 @@ pub(super) async fn sync_two_parties(
         Arc::clone(map.entry(unique_id).or_default())
     };
 
-    let duration = Duration::from_secs(*SYNC_TIMEOUT);
-
-    if tokio::time::timeout(duration, notify.notified())
+    if tokio::time::timeout(state.timeout, notify.notified())
         .await
         .is_err()
     {
-        let mut map = state.lock().await;
+        let mut map = state.map.lock().await;
         map.remove(&unique_id);
 
         tracing::info!("> synchronization timeout by id: {unique_id}");
@@ -45,7 +43,7 @@ pub(super) async fn sync_two_parties(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::time::Duration;
 
     use axum::{
         body::Body,
@@ -53,18 +51,23 @@ mod tests {
     };
     use tower::ServiceExt;
 
+    const SYNC_TIMEOUT: u64 = 1;
+
     #[tokio::test]
     async fn sync_two_parties() -> anyhow::Result<()> {
-        let state = crate::SyncState::default();
+        let state = crate::SyncState {
+            map: crate::SyncMap::default(),
+            timeout: Duration::from_secs(SYNC_TIMEOUT),
+        };
 
-        let first_res = crate::router(Arc::clone(&state)).oneshot(
+        let first_res = crate::router(state.clone()).oneshot(
             Request::builder()
                 .method(axum::http::Method::POST)
                 .uri("/wait-for-second-party/123")
                 .body(Body::empty())?,
         );
 
-        let second_res = crate::router(Arc::clone(&state)).oneshot(
+        let second_res = crate::router(state.clone()).oneshot(
             Request::builder()
                 .method(axum::http::Method::POST)
                 .uri("/wait-for-second-party/123")
@@ -81,19 +84,21 @@ mod tests {
 
     #[tokio::test]
     async fn sync_failed_timeout() -> anyhow::Result<()> {
-        let state = crate::SyncState::default();
+        let state = crate::SyncState {
+            map: crate::SyncMap::default(),
+            timeout: Duration::from_secs(SYNC_TIMEOUT),
+        };
 
-        let res = crate::router(Arc::clone(&state)).oneshot(
-            Request::builder()
-                .method(axum::http::Method::POST)
-                .uri("/wait-for-second-party/123")
-                .body(Body::empty())?,
-        );
+        let res = crate::router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method(axum::http::Method::POST)
+                    .uri("/wait-for-second-party/123")
+                    .body(Body::empty())?,
+            )
+            .await?;
 
-        const SYNC_TIMEOUT: u64 = 2;
-        let res = tokio::time::timeout(Duration::from_secs(SYNC_TIMEOUT), res).await;
-
-        assert!(res.is_err());
+        assert_eq!(res.status(), StatusCode::REQUEST_TIMEOUT);
 
         Ok(())
     }
