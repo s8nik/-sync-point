@@ -596,6 +596,7 @@ dependencies = [
  "dotenv",
  "once_cell",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]
