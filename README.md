@@ -14,6 +14,9 @@ SYNC_POINT_TIMEOUT_SEC=10
 SYNC_POINT_ADDR=127.0.0.1:8000
 ```
 
+### Usage
+![](usage.gif)
+
 ### Running
 ```sh
 cp .env.example .env
