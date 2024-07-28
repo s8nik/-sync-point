@@ -29,7 +29,7 @@ pub async fn serve(addr: SocketAddr) -> anyhow::Result<()> {
     let app = router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    tracing::info!("listening on {}", listener.local_addr().unwrap());
+    tracing::info!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
 
     Ok(())
